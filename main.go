@@ -11,18 +11,15 @@ import (
 
 func main() {
 	e := echo.New()
-	// Register the session middleware with a store (cookie-based in this case)
-	// e.Use(session.Middleware(sessions.NewCookieStore([]byte("secret-key"))))
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"http://localhost:3000"},
+		AllowOrigins: []string{"http://educhain.guru", "https://educhain.guru"},
 		AllowHeaders: []string{
 			echo.HeaderOrigin,
 			echo.HeaderContentType,
 			echo.HeaderAccept,
 			echo.HeaderAuthorization,
 		},
-		AllowMethods:     []string{echo.GET, echo.POST, echo.PUT, echo.DELETE, echo.OPTIONS}, // 모든 메서드 허용
-		AllowCredentials: true,
+		AllowMethods: []string{echo.GET, echo.POST, echo.DELETE},
 	}))
 
 	sessDB := db.NewInMemorySessionStorage()
@@ -40,5 +37,4 @@ func main() {
 		//v1.POST("/rollback", api.RollbackMPT)
 	}
 	e.Logger.Fatal(e.Start(":1323"))
-
 }
