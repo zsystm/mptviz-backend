@@ -3,93 +3,103 @@ package graph
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"strings"
 
-	"github.com/zsystm/mpt/trie"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
-type Attribute struct {
-	Key []byte `json:"key"`
-	Val []byte `json:"val"`
+// DecodedAccount represents a decoded Ethereum state account for display
+type DecodedAccount struct {
+	Nonce    uint64 `json:"nonce"`
+	Balance  string `json:"balance"`
+	Root     string `json:"root"`
+	CodeHash string `json:"codeHash"`
 }
 
-// NodeData represents the node in the trie.
+// OperationRecord tracks a single insert/delete operation
+type OperationRecord struct {
+	Action      string `json:"action"`
+	OriginalKey string `json:"originalKey"`
+	HashedKey   string `json:"hashedKey"`
+	Value       string `json:"value,omitempty"`
+	Step        int    `json:"step"`
+}
+
+// TrieMetadata contains statistics about the trie
+type TrieMetadata struct {
+	NodeCount      int    `json:"nodeCount"`
+	BranchCount    int    `json:"branchCount"`
+	ExtensionCount int    `json:"extensionCount"`
+	LeafCount      int    `json:"leafCount"`
+	HashNodeCount  int    `json:"hashNodeCount"`
+	Depth          int    `json:"depth"`
+	RootHash       string `json:"rootHash,omitempty"`
+}
+
+// TrieResponse is the top-level API response
+type TrieResponse struct {
+	Root       *NodeData          `json:"root"`
+	Operations []*OperationRecord `json:"operations"`
+	Metadata   *TrieMetadata      `json:"metadata"`
+}
+
+// NodeData represents a node in the trie for visualization
 type NodeData struct {
-	Name       string       `json:"name"`
-	Attributes []*Attribute `json:"attributes"`
-	Children   []*NodeData  `json:"children"`
+	ID           string          `json:"id"`
+	NodeType     string          `json:"nodeType"`               // "branch"|"extension"|"leaf"|"hash"|"value"
+	Path         string          `json:"path"`                   // full nibble path from root
+	NibbleKey    string          `json:"nibbleKey,omitempty"`    // nibble path segment for extension/leaf
+	HasTerm      bool            `json:"hasTerm"`
+	Value        string          `json:"value,omitempty"`        // hex-encoded value
+	DecodedValue *DecodedAccount `json:"decodedValue,omitempty"` // decoded account
+	Hash         string          `json:"hash,omitempty"`         // node hash
+	ChildIndex   int             `json:"childIndex"`             // parent branch slot (-1 if root or non-branch child)
+	ActiveSlots  []int           `json:"activeSlots,omitempty"`  // for branch nodes: which slots have children
+	Children     []*NodeData     `json:"children"`
+}
+
+// NibblesToString converts a nibble byte slice to a hex string where each nibble is one char
+func NibblesToString(nibbles []byte) string {
+	result := make([]byte, len(nibbles))
+	for i, n := range nibbles {
+		if n < 10 {
+			result[i] = '0' + n
+		} else {
+			result[i] = 'a' + n - 10
+		}
+	}
+	return string(result)
+}
+
+// DecodeStateAccount attempts to RLP-decode a value as a StateAccount
+func DecodeStateAccount(value []byte) *DecodedAccount {
+	var account types.StateAccount
+	if err := rlp.DecodeBytes(value, &account); err != nil {
+		return nil
+	}
+	return &DecodedAccount{
+		Nonce:    account.Nonce,
+		Balance:  account.Balance.String(),
+		Root:     hex.EncodeToString(account.Root[:]),
+		CodeHash: hex.EncodeToString(account.CodeHash),
+	}
 }
 
 // MarshalJSON customizes the JSON serialization for NodeData.
+// This is kept for backward-compatible behavior if needed but the new struct
+// uses json tags directly. Implementing custom marshal to ensure Children is
+// always an array (never null).
 func (n *NodeData) MarshalJSON() ([]byte, error) {
-	// Create a temporary structure to hold the serialized data.
-	type Alias NodeData // Create an alias to avoid infinite recursion.
-	attributesMap := make(map[string]string)
-
-	// Convert the Attributes slice into a map[string]string
-	for _, attr := range n.Attributes {
-		var key, val string
-		if attr.Key == nil {
-			key = ""
-		} else {
-			//key = hex.EncodeToString(attr.Key)
-			//key = fmt.Sprintf("%s(%d)", key, len(attr.Key))
-			key = hex.EncodeToString(attr.Key)
-			key = fmt.Sprintf("%s(%d)", CleanHex(key), len(attr.Key))
-		}
-		if attr.Val == nil {
-			val = ""
-		} else {
-			val = hex.EncodeToString(attr.Val)
-		}
-		attributesMap[key] = val
+	type Alias NodeData
+	children := n.Children
+	if children == nil {
+		children = make([]*NodeData, 0)
 	}
-
-	// Create an anonymous struct that combines the original NodeData fields
-	// with the new Attributes map[string]string
 	return json.Marshal(&struct {
-		Name       string            `json:"name"`
-		Attributes map[string]string `json:"attributes"`
-		Children   []*NodeData       `json:"children"`
+		*Alias
+		Children []*NodeData `json:"children"`
 	}{
-		Name:       n.Name,
-		Attributes: attributesMap,
-		Children:   n.Children,
+		Alias:    (*Alias)(n),
+		Children: children,
 	})
-}
-
-func NewNodeData(n trie.Node) *NodeData {
-	if n == nil {
-		return &NodeData{
-			Name: "Empty",
-		}
-	}
-
-	return &NodeData{
-		Name:       nodeType(n),
-		Attributes: make([]*Attribute, 0),
-		Children:   make([]*NodeData, 0),
-	}
-}
-
-// CleanHex removes leading '0's from every pair of hex digits.
-func CleanHex(hexStr string) string {
-	var result strings.Builder
-
-	// Iterate over the string in steps of 2 (hex pairs)
-	for i := 0; i < len(hexStr)-1; i += 2 {
-		// Take two characters at a time
-		pair := hexStr[i : i+2]
-
-		// If the first character is '0', use only the second character
-		if pair[0] == '0' {
-			result.WriteByte(pair[1])
-		} else {
-			// Otherwise, add both characters
-			result.WriteString(pair)
-		}
-	}
-
-	return result.String()
 }

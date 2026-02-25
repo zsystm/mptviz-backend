@@ -12,14 +12,15 @@ import (
 func main() {
 	e := echo.New()
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"http://educhain.guru", "https://educhain.guru"},
+		AllowOrigins: []string{"http://localhost:3000", "http://educhain.guru", "https://educhain.guru"},
 		AllowHeaders: []string{
 			echo.HeaderOrigin,
 			echo.HeaderContentType,
 			echo.HeaderAccept,
 			echo.HeaderAuthorization,
 		},
-		AllowMethods: []string{echo.GET, echo.POST, echo.DELETE},
+		AllowMethods:     []string{echo.GET, echo.POST, echo.DELETE},
+		AllowCredentials: true,
 	}))
 
 	sessDB := db.NewInMemorySessionStorage()
