@@ -12,6 +12,7 @@ import (
 
 	"github.com/zsystm/mpt/graph"
 	"github.com/zsystm/mpt/handlers"
+	"github.com/zsystm/mpt/utils"
 )
 
 type ApiMPT struct {
@@ -50,9 +51,15 @@ func (a *ApiMPT) GetMPT(c echo.Context) error {
 			"message": "Failed to get session",
 		})
 	}
-	mptGraph := graph.Dfs(nil, mpt.Root, nil)
 
-	return c.JSON(http.StatusOK, mptGraph)
+	nodeData, metadata := graph.BuildTrieGraph(mpt.Root)
+	operations := a.h.GetOperations(sessID)
+
+	return c.JSON(http.StatusOK, &graph.TrieResponse{
+		Root:       nodeData,
+		Operations: operations,
+		Metadata:   metadata,
+	})
 }
 
 func (a *ApiMPT) Insert(c echo.Context) error {
@@ -71,7 +78,13 @@ func (a *ApiMPT) Insert(c echo.Context) error {
 			"message": "Invalid key",
 		})
 	}
-	// remove 0x prefix
+	// Preserve original key with 0x prefix for the response
+	originalKey := key
+	if len(originalKey) > 2 && originalKey[:2] != "0x" {
+		originalKey = "0x" + originalKey
+	}
+
+	// remove 0x prefix for decoding
 	if len(key) > 2 && key[:2] == "0x" {
 		key = key[2:]
 	}
@@ -82,6 +95,11 @@ func (a *ApiMPT) Insert(c echo.Context) error {
 			"message": "Invalid key",
 		})
 	}
+
+	// Hash the key with keccak256 to match go-ethereum's MPT behavior
+	hashedKey := utils.HashKey(keyBytes)
+	hashedKeyHex := hex.EncodeToString(hashedKey)
+
 	value := c.QueryParam("value")
 	if value == "" {
 		return c.JSON(http.StatusBadRequest, echo.Map{
@@ -101,15 +119,23 @@ func (a *ApiMPT) Insert(c echo.Context) error {
 		})
 	}
 
-	mpt, err := a.h.Insert(sessID, keyBytes, valueBytes)
+	valueHex := hex.EncodeToString(valueBytes)
+
+	mpt, err := a.h.Insert(sessID, hashedKey, valueBytes, originalKey, hashedKeyHex, valueHex)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{
 			"message": "Failed to insert",
 		})
 	}
 
-	mptGraph := graph.Dfs(nil, mpt.Root, nil)
-	return c.JSON(http.StatusOK, mptGraph)
+	nodeData, metadata := graph.BuildTrieGraph(mpt.Root)
+	operations := a.h.GetOperations(sessID)
+
+	return c.JSON(http.StatusOK, &graph.TrieResponse{
+		Root:       nodeData,
+		Operations: operations,
+		Metadata:   metadata,
+	})
 }
 
 func (a *ApiMPT) Delete(c echo.Context) error {
@@ -128,7 +154,13 @@ func (a *ApiMPT) Delete(c echo.Context) error {
 			"message": "Invalid key",
 		})
 	}
-	// remove 0x prefix
+	// Preserve original key with 0x prefix for the response
+	originalKey := key
+	if len(originalKey) > 2 && originalKey[:2] != "0x" {
+		originalKey = "0x" + originalKey
+	}
+
+	// remove 0x prefix for decoding
 	if len(key) > 2 && key[:2] == "0x" {
 		key = key[2:]
 	}
@@ -140,13 +172,23 @@ func (a *ApiMPT) Delete(c echo.Context) error {
 		})
 	}
 
-	mpt, err := a.h.Delete(sessID, keyBytes)
+	// Hash the key with keccak256 to match go-ethereum's MPT behavior
+	hashedKey := utils.HashKey(keyBytes)
+	hashedKeyHex := hex.EncodeToString(hashedKey)
+
+	mpt, err := a.h.Delete(sessID, hashedKey, originalKey, hashedKeyHex)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, echo.Map{
 			"message": "Failed to delete",
 		})
 	}
 
-	mptGraph := graph.Dfs(nil, mpt.Root, nil)
-	return c.JSON(http.StatusOK, mptGraph)
+	nodeData, metadata := graph.BuildTrieGraph(mpt.Root)
+	operations := a.h.GetOperations(sessID)
+
+	return c.JSON(http.StatusOK, &graph.TrieResponse{
+		Root:       nodeData,
+		Operations: operations,
+		Metadata:   metadata,
+	})
 }

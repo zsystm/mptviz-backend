@@ -4,6 +4,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/zsystm/mpt/db"
+	"github.com/zsystm/mpt/graph"
 	"github.com/zsystm/mpt/trie"
 )
 
@@ -35,24 +36,51 @@ func (h *MPTHandler) GetMPT(sessionID string) (*trie.Trie, error) {
 	return mpt, nil
 }
 
-func (h *MPTHandler) Insert(sessionID string, key, value []byte) (*trie.Trie, error) {
+func (h *MPTHandler) Insert(sessionID string, hashedKey, value []byte, originalKeyHex, hashedKeyHex, valueHex string) (*trie.Trie, error) {
 	mpt, err := h.sessDB.Get(sessionID)
 	if err != nil {
 		return nil, err
 	}
-	if err = mpt.Update(key, value); err != nil {
+	if err = mpt.Update(hashedKey, value); err != nil {
 		return nil, err
 	}
+
+	// Record the operation
+	ops := h.sessDB.GetOperations(sessionID)
+	step := len(ops) + 1
+	h.sessDB.AddOperation(sessionID, &graph.OperationRecord{
+		Action:      "insert",
+		OriginalKey: originalKeyHex,
+		HashedKey:   hashedKeyHex,
+		Value:       valueHex,
+		Step:        step,
+	})
+
 	return mpt, nil
 }
 
-func (h *MPTHandler) Delete(sessionID string, key []byte) (*trie.Trie, error) {
+func (h *MPTHandler) Delete(sessionID string, hashedKey []byte, originalKeyHex, hashedKeyHex string) (*trie.Trie, error) {
 	mpt, err := h.sessDB.Get(sessionID)
 	if err != nil {
 		return nil, err
 	}
-	if err = mpt.Delete(key); err != nil {
+	if err = mpt.Delete(hashedKey); err != nil {
 		return nil, err
 	}
+
+	// Record the operation
+	ops := h.sessDB.GetOperations(sessionID)
+	step := len(ops) + 1
+	h.sessDB.AddOperation(sessionID, &graph.OperationRecord{
+		Action:      "delete",
+		OriginalKey: originalKeyHex,
+		HashedKey:   hashedKeyHex,
+		Step:        step,
+	})
+
 	return mpt, nil
+}
+
+func (h *MPTHandler) GetOperations(sessionID string) []*graph.OperationRecord {
+	return h.sessDB.GetOperations(sessionID)
 }
